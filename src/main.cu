@@ -6,6 +6,7 @@
 #include <chrono>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -24,6 +25,13 @@ bool isDirectory(const char* path) {
     return S_ISDIR(statbuf.st_mode);
 }
 
+// Helper to convert string to lowercase
+string toLower(const string& str) {
+    string result = str;
+    transform(result.begin(), result.end(), result.begin(), ::tolower);
+    return result;
+}
+
 // Get all image files from directory
 vector<string> getImageFiles(const char* directory) {
     vector<string> files;
@@ -37,12 +45,14 @@ vector<string> getImageFiles(const char* directory) {
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG) {
             string filename = entry->d_name;
-            string lower = filename;
-            for (auto& c : lower) c = tolower(c);
+            string lower = toLower(filename);
             
+            // Check for all supported image formats including TIFF
             if (lower.find(".jpg") != string::npos || 
                 lower.find(".jpeg") != string::npos || 
-                lower.find(".png") != string::npos) {
+                lower.find(".png") != string::npos ||
+                lower.find(".tiff") != string::npos ||
+                lower.find(".tif") != string::npos) {
                 files.push_back(string(directory) + "/" + filename);
             }
         }
@@ -68,6 +78,7 @@ int main(int argc, char** argv) {
     
     if (numImages == 0) {
         printf("No images found in %s\n", inputDir);
+        printf("Looking for: .jpg, .jpeg, .png, .tiff, .tif files\n");
         return 1;
     }
     
@@ -92,6 +103,8 @@ int main(int argc, char** argv) {
     auto start = high_resolution_clock::now();
     
     int processedCount = 0;
+    int failedCount = 0;
+    
     for (const auto& imagePath : imageFiles) {
         // Load image
         int width, height, channels;
@@ -99,6 +112,7 @@ int main(int argc, char** argv) {
         
         if (!imageData) {
             printf("Failed to load: %s\n", imagePath.c_str());
+            failedCount++;
             continue;
         }
         
@@ -108,8 +122,14 @@ int main(int argc, char** argv) {
         // Process on GPU
         processImageGPU(imageData, outputData, width, height, filterType);
         
-        // Save output
+        // Save output - change extension to .jpg for output
         string filename = imagePath.substr(imagePath.find_last_of("/") + 1);
+        // Replace .tiff/.tif with .jpg
+        size_t lastDot = filename.find_last_of(".");
+        if (lastDot != string::npos) {
+            filename = filename.substr(0, lastDot) + ".jpg";
+        }
+        
         string outputPath = string(outputDir) + "/" + filename;
         stbi_write_jpg(outputPath.c_str(), width, height, 1, outputData, 95);
         
@@ -117,7 +137,7 @@ int main(int argc, char** argv) {
         free(outputData);
         
         processedCount++;
-        if (processedCount % 10 == 0) {
+        if (processedCount % 25 == 0) {
             printf("Processed %d/%d images...\r", processedCount, numImages);
             fflush(stdout);
         }
@@ -127,10 +147,16 @@ int main(int argc, char** argv) {
     auto duration = duration_cast<milliseconds>(end - start);
     
     printf("\n\n=== Results ===\n");
-    printf("Total images processed: %d\n", processedCount);
+    printf("Total images found: %d\n", numImages);
+    printf("Successfully processed: %d\n", processedCount);
+    if (failedCount > 0) {
+        printf("Failed to load: %d\n", failedCount);
+    }
     printf("Total time: %.2f seconds\n", duration.count() / 1000.0);
-    printf("Average time per image: %.2f ms\n", (float)duration.count() / processedCount);
-    printf("Throughput: %.2f images/second\n", processedCount / (duration.count() / 1000.0));
+    if (processedCount > 0) {
+        printf("Average time per image: %.2f ms\n", (float)duration.count() / processedCount);
+        printf("Throughput: %.2f images/second\n", processedCount / (duration.count() / 1000.0));
+    }
     
     return 0;
 }
