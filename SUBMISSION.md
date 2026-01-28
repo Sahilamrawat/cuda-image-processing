@@ -98,8 +98,8 @@ These patterns were chosen to clearly demonstrate the blur effect and validate k
 
 ## 4. Links
 
-- **GitHub Repository**: https://github.com/YOUR_USERNAME/cuda-image-processing
-- **Google Colab Notebook**: *(Save and share your Colab notebook link here)*
+- **GitHub Repository**: https://github.com/Sahilamrawat/cuda-image-processing
+- **Google Colab Notebook**:https://colab.research.google.com/drive/1SNWxwLR7kPFu2B1O5nLLXbF-7lT5MErc?usp=sharing
 - **Proof of Execution**: `results/proof_of_execution.png` in repository
 
 ## 5. Execution Environment
