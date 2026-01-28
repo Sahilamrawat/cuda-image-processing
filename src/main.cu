@@ -50,11 +50,14 @@ vector<string> getImageFiles(const char* directory) {
             // Check for all supported image formats including TIFF
             if (lower.find(".jpg") != string::npos || 
                 lower.find(".jpeg") != string::npos || 
+
                 lower.find(".png") != string::npos ||
                 lower.find(".tiff") != string::npos ||
                 lower.find(".tif") != string::npos) {
                 files.push_back(string(directory) + "/" + filename);
             }
+                
+        
         }
     }
     closedir(dir);
