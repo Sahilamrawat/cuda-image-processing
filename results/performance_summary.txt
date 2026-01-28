@@ -1,0 +1,25 @@
+
+=== PERFORMANCE SUMMARY ===
+
+GPU Device: NVIDIA Tesla T4
+Compute Capability: 7.5
+Memory: 15.83 GB
+
+Dataset:
+- Total Images: 250
+- Resolution: 512x512 pixels
+- Format: Grayscale JPG
+
+Processing Results:
+- Total Processing Time: 9.49 seconds
+- Average Time per Image: 37.96 ms
+- Throughput: 26.35 images/second
+
+Algorithm:
+- Gaussian Blur (5x5 kernel)
+- GPU parallelization with 16x16 thread blocks
+
+Performance Analysis:
+- Estimated CPU time (single-threaded): ~150 seconds
+- GPU Speedup: ~15-16x faster than CPU
+- GPU utilization: High (batch processing of 250 images)
