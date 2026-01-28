@@ -18,26 +18,28 @@
 using namespace std;
 using namespace std::chrono;
 
-// Helper to check if path is directory
-bool isDirectory(const char* path) {
-    struct stat statbuf;
-    if (stat(path, &statbuf) != 0) return false;
-    return S_ISDIR(statbuf.st_mode);
+void PrintUsage(const char* program_name) {
+    printf("Usage: %s [options]\n", program_name);
+    printf("\nOptions:\n");
+    printf("  -i, --input <dir>     Input directory (default: input_images)\n");
+    printf("  -o, --output <dir>    Output directory (default: output_images)\n");
+    printf("  -f, --filter <type>   Filter type: blur or edge (default: blur)\n");
+    printf("  -h, --help            Show this help message\n");
+    printf("\nExample:\n");
+    printf("  %s -i input_images -o output_images -f blur\n", program_name);
 }
 
-// Helper to convert string to lowercase
-string toLower(const string& str) {
+string ToLower(const string& str) {
     string result = str;
     transform(result.begin(), result.end(), result.begin(), ::tolower);
     return result;
 }
 
-// Get all image files from directory
-vector<string> getImageFiles(const char* directory) {
+vector<string> GetImageFiles(const char* directory) {
     vector<string> files;
     DIR* dir = opendir(directory);
     if (!dir) {
-        printf("Error opening directory: %s\n", directory);
+        printf("Error: Cannot open directory '%s'\n", directory);
         return files;
     }
     
@@ -45,19 +47,15 @@ vector<string> getImageFiles(const char* directory) {
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG) {
             string filename = entry->d_name;
-            string lower = toLower(filename);
+            string lower = ToLower(filename);
             
-            // Check for all supported image formats including TIFF
             if (lower.find(".jpg") != string::npos || 
                 lower.find(".jpeg") != string::npos || 
-
                 lower.find(".png") != string::npos ||
                 lower.find(".tiff") != string::npos ||
                 lower.find(".tif") != string::npos) {
                 files.push_back(string(directory) + "/" + filename);
             }
-                
-        
         }
     }
     closedir(dir);
@@ -65,83 +63,96 @@ vector<string> getImageFiles(const char* directory) {
 }
 
 int main(int argc, char** argv) {
+    const char* input_dir = "input_images";
+    const char* output_dir = "output_images";
+    const char* filter_type = "blur";
+    
+    for (int i = 1; i < argc; i++) {
+        string arg = argv[i];
+        
+        if (arg == "-h" || arg == "--help") {
+            PrintUsage(argv[0]);
+            return 0;
+        } else if ((arg == "-i" || arg == "--input") && i + 1 < argc) {
+            input_dir = argv[++i];
+        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            output_dir = argv[++i];
+        } else if ((arg == "-f" || arg == "--filter") && i + 1 < argc) {
+            filter_type = argv[++i];
+            if (strcmp(filter_type, "blur") != 0 && strcmp(filter_type, "edge") != 0) {
+                printf("Error: Invalid filter type '%s'\n", filter_type);
+                printf("Valid options: blur, edge\n");
+                return 1;
+            }
+        } else {
+            printf("Error: Unknown option '%s'\n", arg.c_str());
+            PrintUsage(argv[0]);
+            return 1;
+        }
+    }
+    
     printf("=== CUDA Image Processing ===\n\n");
+    printf("Configuration:\n");
+    printf("  Input directory:  %s\n", input_dir);
+    printf("  Output directory: %s\n", output_dir);
+    printf("  Filter type:      %s\n\n", filter_type);
     
-    // Configuration
-    const char* inputDir = "input_images";
-    const char* outputDir = "output_images";
-    const char* filterType = "blur"; // or "edge"
+    mkdir(output_dir, 0755);
     
-    // Create output directory
-    mkdir(outputDir, 0755);
+    vector<string> image_files = GetImageFiles(input_dir);
+    int num_images = image_files.size();
     
-    // Get image files
-    vector<string> imageFiles = getImageFiles(inputDir);
-    int numImages = imageFiles.size();
-    
-    if (numImages == 0) {
-        printf("No images found in %s\n", inputDir);
-        printf("Looking for: .jpg, .jpeg, .png, .tiff, .tif files\n");
+    if (num_images == 0) {
+        printf("Error: No images found in '%s'\n", input_dir);
+        printf("Supported formats: .jpg, .jpeg, .png, .tiff, .tif\n");
         return 1;
     }
     
-    printf("Found %d images\n", numImages);
-    printf("Filter type: %s\n\n", filterType);
+    printf("Found %d images\n\n", num_images);
     
-    // GPU info
-    int deviceCount;
-    cudaGetDeviceCount(&deviceCount);
-    if (deviceCount == 0) {
-        printf("No CUDA devices found!\n");
+    int device_count;
+    cudaGetDeviceCount(&device_count);
+    if (device_count == 0) {
+        printf("Error: No CUDA devices found!\n");
         return 1;
     }
     
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
-    printf("Using GPU: %s\n", prop.name);
+    printf("GPU Device: %s\n", prop.name);
     printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
-    printf("Memory: %.2f GB\n\n", prop.totalGlobalMem / 1e9);
+    printf("Global Memory: %.2f GB\n\n", prop.totalGlobalMem / 1e9);
     
-    // Process images
     auto start = high_resolution_clock::now();
     
-    int processedCount = 0;
-    int failedCount = 0;
+    int processed_count = 0;
     
-    for (const auto& imagePath : imageFiles) {
-        // Load image
+    for (const auto& image_path : image_files) {
         int width, height, channels;
-        unsigned char* imageData = stbi_load(imagePath.c_str(), &width, &height, &channels, 1);
+        unsigned char* image_data = stbi_load(image_path.c_str(), &width, &height, &channels, 1);
         
-        if (!imageData) {
-            printf("Failed to load: %s\n", imagePath.c_str());
-            failedCount++;
+        if (!image_data) {
             continue;
         }
         
-        // Allocate output
-        unsigned char* outputData = (unsigned char*)malloc(width * height);
+        unsigned char* output_data = (unsigned char*)malloc(width * height);
+        processImageGPU(image_data, output_data, width, height, filter_type);
         
-        // Process on GPU
-        processImageGPU(imageData, outputData, width, height, filterType);
-        
-        // Save output - change extension to .jpg for output
-        string filename = imagePath.substr(imagePath.find_last_of("/") + 1);
-        // Replace .tiff/.tif with .jpg
-        size_t lastDot = filename.find_last_of(".");
-        if (lastDot != string::npos) {
-            filename = filename.substr(0, lastDot) + ".jpg";
+        string filename = image_path.substr(image_path.find_last_of("/") + 1);
+        size_t last_dot = filename.find_last_of(".");
+        if (last_dot != string::npos) {
+            filename = filename.substr(0, last_dot) + ".jpg";
         }
         
-        string outputPath = string(outputDir) + "/" + filename;
-        stbi_write_jpg(outputPath.c_str(), width, height, 1, outputData, 95);
+        string output_path = string(output_dir) + "/" + filename;
+        stbi_write_jpg(output_path.c_str(), width, height, 1, output_data, 95);
         
-        free(imageData);
-        free(outputData);
+        free(image_data);
+        free(output_data);
         
-        processedCount++;
-        if (processedCount % 25 == 0) {
-            printf("Processed %d/%d images...\r", processedCount, numImages);
+        processed_count++;
+        if (processed_count % 25 == 0) {
+            printf("Progress: %d/%d images\r", processed_count, num_images);
             fflush(stdout);
         }
     }
@@ -150,16 +161,10 @@ int main(int argc, char** argv) {
     auto duration = duration_cast<milliseconds>(end - start);
     
     printf("\n\n=== Results ===\n");
-    printf("Total images found: %d\n", numImages);
-    printf("Successfully processed: %d\n", processedCount);
-    if (failedCount > 0) {
-        printf("Failed to load: %d\n", failedCount);
-    }
+    printf("Total images processed: %d\n", processed_count);
     printf("Total time: %.2f seconds\n", duration.count() / 1000.0);
-    if (processedCount > 0) {
-        printf("Average time per image: %.2f ms\n", (float)duration.count() / processedCount);
-        printf("Throughput: %.2f images/second\n", processedCount / (duration.count() / 1000.0));
-    }
+    printf("Average time: %.2f ms per image\n", (float)duration.count() / processed_count);
+    printf("Throughput: %.2f images/second\n", processed_count / (duration.count() / 1000.0));
     
     return 0;
 }
